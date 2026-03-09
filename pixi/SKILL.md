@@ -357,10 +357,11 @@ extra-index-urls = ["https://mirrors.aliyun.com/pypi/simple/"]
 
 [tool.pixi.pypi-dependencies]
 project-name = { path = ".", editable = true }
-airbot-py = { path = "deps/airbot_py-5.1.6-py3-none-any.whl"}
 
 [tool.pixi.feature.build.pypi-dependencies]
 build = "*"
+
+[tool.pixi.feature.build.task]
 
 [tool.pixi.feature.publish.dependencies]
 twine = "*"
