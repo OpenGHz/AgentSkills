@@ -180,14 +180,16 @@ List every existing documentation file and note what each covers:
 
 ### Step 3: Build a gap analysis
 
-Compare the codebase to the docs and categorize:
+Compare the codebase to the docs and categorize. Documentation maintenance is not just about adding and updating — **deleting obsolete docs and merging redundant ones are equally important** to keep the documentation concise, accurate, and maintainable.
 
-| Status      | Meaning                                               | Action                          |
-| ----------- | ----------------------------------------------------- | ------------------------------- |
-| **Missing** | Feature/API exists in code but has no documentation    | Create a new doc                |
-| **Outdated**| Doc exists but references removed/changed code       | Update the doc                  |
-| **Orphaned**| Doc describes something no longer in the code        | Flag for removal (ask user)     |
-| **Accurate**| Doc matches current code                              | Leave alone                     |
+| Status        | Meaning                                               | Action                          |
+| ------------- | ----------------------------------------------------- | ------------------------------- |
+| **Missing**   | Feature/API exists in code but has no documentation    | Create a new doc                |
+| **Outdated**  | Doc exists but references removed/changed code        | Update the doc                  |
+| **Obsolete**  | Doc describes a feature/workflow that no longer exists or is no longer relevant to the project | **Delete** — remove the file, remove its sidebar entry, remove links pointing to it |
+| **Redundant** | Multiple docs cover the same topic with overlapping content, or a single topic is fragmented across files unnecessarily | **Merge** — consolidate into one doc, delete the duplicates, update all links |
+| **Orphaned**  | Doc exists on disk but is not referenced by sidebar or any other doc | Evaluate: add to sidebar, merge into another doc, or delete |
+| **Accurate**  | Doc matches current code                              | Leave alone                     |
 
 Also check whether the doc site itself is complete:
 - Is there an index/home page?
@@ -225,6 +227,17 @@ Outdated docs (2):
   - docs/api/client.md — references removed `Client.legacy_connect()`
   - docs/config.md — missing new `timeout` option
 
+Obsolete docs to delete (2):
+  - docs/guides/legacy-auth.md — legacy auth system was removed in v3.0
+  - docs/api/xml-export.md — XML export feature no longer exists
+
+Redundant docs to merge (1):
+  - docs/guides/setup.md + docs/getting-started/installation.md — both cover
+    installation steps with overlapping content → merge into docs/getting-started/installation.md
+
+Orphaned docs (1):
+  - docs/notes/roadmap.md — not in sidebar, not linked from any doc → delete or add to sidebar
+
 Missing infrastructure (3):
   - docs/index.html (Docsify entry point)
   - docs/_coverpage.md
@@ -252,7 +265,22 @@ If directory restructuring was proposed and the user confirmed:
 
 ### Step 8: Apply updates
 
-Walk through each missing/outdated doc with user confirmation, following the "Update Existing Documentation" and "Scaffold New Feature Documentation" workflows.
+Walk through each action with user confirmation. The full set of operations includes:
+
+1. **Delete obsolete docs** — remove files that describe features/workflows no longer present in the project. For each deletion:
+   - Remove the file from disk
+   - Remove its entry from the sidebar/navigation config
+   - Search for and remove or update any links pointing to the deleted doc from other docs
+2. **Merge redundant docs** — when multiple docs cover the same topic, consolidate them into a single authoritative doc. For each merge:
+   - Choose the best target file (the more complete or better-located one)
+   - Incorporate unique content from the other file(s) into the target
+   - Delete the source file(s)
+   - Update the sidebar to remove duplicates and keep only the merged doc
+   - Redirect or update all links that pointed to the deleted source files
+3. **Update outdated docs** — following the "Update Existing Documentation" workflow
+4. **Create missing docs** — following the "Scaffold New Feature Documentation" workflow
+
+Execute deletions and merges **before** creating new docs, to avoid writing content that would overlap with existing docs about to be merged.
 
 ## Workflow: Analyze Code Changes (Incremental Run)
 
@@ -290,6 +318,8 @@ Look for changes that affect public-facing behavior:
 | Deprecated feature           | Add deprecation notice and migration  |
 | New CLI command/flag         | Update CLI reference                  |
 | Bug fix with workaround docs | Remove or update workaround guidance  |
+| **Removed feature/API**      | **Delete** the corresponding doc      |
+| **Merged/consolidated modules** | **Merge** the corresponding docs into one |
 
 Internal-only changes (private utilities, refactors without behavior change) typically don't need doc updates.
 
