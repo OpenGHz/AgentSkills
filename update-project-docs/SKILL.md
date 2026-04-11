@@ -11,12 +11,15 @@ Guides you through updating project documentation based on code changes on the a
 
 1. **Pre-flight check**: Verify the working tree is clean and find the last sync point
 2. **Discover project structure**: Find documentation directories, formats, and conventions
-3. **Analyze changes**: Diff from the last sync point (or base branch) to see what files changed
-4. **Map code to docs**: Identify which documentation is affected by the changes
-5. **Review and update each doc**: Walk through updates with user confirmation
-6. **Validate**: Run the project's lint/build checks
-7. **Record sync point**: Save the current commit hash so the next run can do an incremental update
-8. **Commit**: Stage documentation changes
+3. **Determine run mode**:
+   - **First run** (no `.docs-sync` record): Perform a **full-project audit** — read the entire codebase, compare with existing docs, fill every gap. Do **not** rely on git diff.
+   - **Incremental run** (sync record exists): Diff from the recorded commit hash and only review changes since then.
+4. **Map code to docs**: Identify which documentation is missing, outdated, or affected
+5. **Scaffold missing doc infrastructure** (first run only, if needed): Create the doc site skeleton
+6. **Review and update each doc**: Walk through updates with user confirmation
+7. **Validate**: Run the project's lint/build checks
+8. **Record sync point**: Save the current commit hash so the next run can do an incremental update
+9. **Commit**: Stage documentation changes
 
 ## Workflow: Pre-flight Check
 
@@ -37,7 +40,7 @@ Use the AskUserQuestion tool to present this choice. Do not silently include or 
 
 ### Step 2: Find the last sync point
 
-The skill records the commit hash of the last documentation sync in a tracking file so subsequent runs can do **incremental updates** instead of re-scanning the entire history.
+The skill records the commit hash of the last documentation sync in a tracking file so subsequent runs can do **incremental updates** instead of re-scanning the entire codebase.
 
 Look for the sync record in this order:
 
@@ -55,12 +58,20 @@ abc1234567890def...
 2026-04-11T10:30:00Z
 ```
 
-If a sync record exists:
+**Decide the run mode based on what you find:**
+
+#### Incremental run (sync record exists)
+
 - Verify the recorded commit still exists in history (`git cat-file -e <hash>`)
 - Use it as the diff base: `git diff <recorded-hash>...HEAD`
-- If the commit no longer exists (force-pushed, rebased away), warn the user and fall back to the base branch
+- Only changes since that commit are reviewed — this is the fast path
+- If the commit no longer exists (force-pushed, rebased away), warn the user and fall back to first-run mode
 
-If no sync record exists, this is the first run — fall back to diffing against the base branch and offer to create a sync record at the end.
+#### First run (no sync record)
+
+**Do not use git diff as the entry point.** A first run means the documentation has never been audited against the current codebase — there may be missing, outdated, or stale documentation regardless of recent git history. Even if `git diff origin/main...HEAD` is empty, the docs may still need substantial work.
+
+Instead, perform a **full-project audit** (see the "First-Run Full Audit" workflow below). After the audit is complete and documentation is updated, record the current `HEAD` as the sync point so subsequent runs can switch to incremental mode.
 
 ## Workflow: Discover Project Structure
 
@@ -140,25 +151,93 @@ Check for lint/build commands in:
 - `tox.ini` / `noxfile.py` — look for docs environments
 - CI config (`.github/workflows/`, `.gitlab-ci.yml`) — look for doc validation steps
 
-## Workflow: Analyze Code Changes
+## Workflow: First-Run Full Audit
+
+Use this workflow when **no sync record exists**. The goal is to bring documentation up to parity with the current state of the codebase, not to review recent changes.
+
+### Step 1: Enumerate the codebase
+
+Build a picture of what the project actually contains. Use Glob and Read (or delegate to the Explore subagent for larger codebases) to identify:
+
+- **Public APIs**: exported functions, classes, modules, CLI commands, HTTP endpoints
+- **Configuration surface**: config files, environment variables, CLI flags
+- **User-facing features**: anything a consumer of this project would need to know about
+- **Entry points**: main modules, `__init__.py`, `index.*`, `main.*`, `cli.*`
+- **Project metadata**: `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, etc. for project purpose and dependencies
+
+Ignore internal-only utilities, test fixtures, and build artifacts.
+
+### Step 2: Enumerate existing documentation
+
+List every existing documentation file and note what each covers:
+
+- All files under the doc root (`docs/`, etc.)
+- `README.md` at the project root
+- Co-located README files in source directories
+- Any sidebar/navigation config (it tells you what docs the project *intends* to have)
+
+### Step 3: Build a gap analysis
+
+Compare the codebase to the docs and categorize:
+
+| Status      | Meaning                                               | Action                          |
+| ----------- | ----------------------------------------------------- | ------------------------------- |
+| **Missing** | Feature/API exists in code but has no documentation    | Create a new doc                |
+| **Outdated**| Doc exists but references removed/changed code       | Update the doc                  |
+| **Orphaned**| Doc describes something no longer in the code        | Flag for removal (ask user)     |
+| **Accurate**| Doc matches current code                              | Leave alone                     |
+
+Also check whether the doc site itself is complete:
+- Is there an index/home page?
+- Is there a sidebar/navigation config?
+- Does the sidebar reference files that don't exist?
+- Are there essential infrastructure files missing (e.g., `index.html` for Docsify)?
+
+### Step 4: Present the gap analysis to the user
+
+Before making changes, show the user the categorized list:
+
+```
+First-run audit results:
+
+Missing docs (5):
+  - CLI commands: `mytool run`, `mytool init`
+  - Public function: `parse_config()`
+  - Configuration: `MYTOOL_CACHE_DIR` env var
+  - ...
+
+Outdated docs (2):
+  - docs/api/client.md — references removed `Client.legacy_connect()`
+  - docs/config.md — missing new `timeout` option
+
+Missing infrastructure (3):
+  - docs/index.html (Docsify entry point)
+  - docs/_coverpage.md
+  - Sidebar references docs/guides/advanced.md which does not exist
+```
+
+Confirm the plan before making any edits.
+
+### Step 5: Scaffold missing infrastructure
+
+If the doc site is incomplete, fill in the missing infrastructure files. See "Workflow: Scaffold Documentation Site Infrastructure" below.
+
+### Step 6: Apply updates
+
+Walk through each missing/outdated doc with user confirmation, following the "Update Existing Documentation" and "Scaffold New Feature Documentation" workflows.
+
+## Workflow: Analyze Code Changes (Incremental Run)
+
+Use this workflow when **a sync record exists**. It reviews only the changes since the last documentation sync.
 
 ### Step 1: Get the diff
 
-Use the diff base determined in the pre-flight step:
-
-- **If a sync record was found**: diff from the recorded commit hash
-  ```bash
-  BASE=<recorded-hash-from-sync-file>
-  ```
-- **If no sync record exists** (first run): diff from the base branch
-  ```bash
-  BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD origin/master 2>/dev/null)
-  ```
-
-Then run the diff:
+Use the recorded commit hash as the diff base:
 
 ```bash
-# See all changed files since the diff base
+BASE=<recorded-hash-from-sync-file>
+
+# See all changed files since the last sync
 git diff $BASE...HEAD --stat
 
 # See detailed changes in source directories
@@ -168,7 +247,7 @@ git diff $BASE...HEAD -- src/ lib/ packages/
 git log --oneline $BASE..HEAD
 ```
 
-Using the recorded sync point makes runs **incremental** — only changes since the last documentation update are reviewed, instead of re-scanning the full branch history every time.
+Only changes since the last documentation update are reviewed, instead of re-scanning the full codebase every time.
 
 ### Step 2: Identify documentation-relevant changes
 
@@ -194,6 +273,122 @@ See `references/CODE-TO-DOCS-MAPPING.md` for detailed discovery strategies. Key 
 2. **Search by file path**: Grep for references to the changed source file path in docs
 3. **Co-located docs**: Check for README files in the same directory as changed code
 4. **Directory conventions**: Map source directories to corresponding doc directories
+
+## Workflow: Scaffold Documentation Site Infrastructure
+
+Use this when the project needs a documentation site but the infrastructure files are missing or incomplete. Most commonly triggered during a first-run audit.
+
+### Choosing a doc system
+
+| Situation                                                     | What to do                                    |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| Project already uses a specific doc system (MkDocs, Docusaurus, Sphinx, VitePress, mdBook, etc.) | Respect it — fill in missing files using that system's conventions |
+| Project has partial Docsify setup (e.g., `_sidebar.md` exists but no `index.html`) | Complete the Docsify setup                    |
+| Project has no doc site infrastructure at all                  | **Default to Docsify** — lightweight, no build step, plain Markdown |
+| User explicitly requested a different system                  | Follow the user's instructions                |
+
+### Docsify scaffolding (default)
+
+Docsify is a zero-build documentation site generator — it serves Markdown files directly via a single `index.html`. When scaffolding a new doc site or completing a partial Docsify setup, create these files under `docs/`:
+
+**`docs/index.html`** — the Docsify entry point:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Project Name</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0">
+  <meta name="description" content="Project description">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+</head>
+<body>
+  <div id="app">Loading...</div>
+  <script>
+    window.$docsify = {
+      name: 'Project Name',
+      repo: '',
+      loadSidebar: true,
+      loadNavbar: false,
+      coverpage: true,
+      auto2top: true,
+      search: 'auto',
+      subMaxLevel: 3,
+    }
+  </script>
+  <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+</body>
+</html>
+```
+
+Replace `Project Name` and the description based on the project's metadata (`pyproject.toml`, `package.json`, etc.).
+
+**`docs/_sidebar.md`** — navigation sidebar:
+
+```markdown
+- [Home](/)
+- Getting Started
+  - [Installation](getting-started/installation.md)
+  - [Quick Start](getting-started/quick-start.md)
+- Guides
+  - [Basic Usage](guides/basic-usage.md)
+- API Reference
+  - [Overview](api/index.md)
+```
+
+Populate the sidebar based on the actual topics the project needs documented. The file-system structure under `docs/` should mirror the sidebar hierarchy.
+
+**`docs/_coverpage.md`** — landing page:
+
+```markdown
+![logo](_media/logo.png ':size=200')
+
+# Project Name <small>v1.0</small>
+
+> Brief tagline describing what the project does.
+
+- Key feature 1
+- Key feature 2
+- Key feature 3
+
+[GitHub](https://github.com/owner/repo)
+[Get Started](#project-name)
+```
+
+Fill in real content from the project metadata — remove the logo line if there's no existing logo.
+
+**`docs/README.md`** — home page content (Docsify uses this as the default landing page):
+
+```markdown
+# Project Name
+
+Introduction to the project.
+
+## Features
+
+- ...
+
+## Installation
+
+...
+
+## Quick Example
+
+...
+```
+
+**`docs/.nojekyll`** — empty file to disable Jekyll processing on GitHub Pages:
+
+```
+```
+
+### Confirm with the user before creating infrastructure files
+
+Before creating these files, tell the user what will be created and confirm. They may prefer a different doc system, or want specific branding/metadata in the landing page.
 
 ## Workflow: Update Existing Documentation
 
