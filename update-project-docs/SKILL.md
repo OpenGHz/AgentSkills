@@ -106,7 +106,32 @@ Also check for documentation build configuration files that reveal the doc root:
 | AsciiDoc    | `.adoc`, `.asciidoc` | Java/enterprise projects        |
 | HTML        | `.html`              | Legacy or generated docs        |
 
-### Step 4: Discover validation commands
+### Step 4: Discover sidebar / navigation structure
+
+Many documentation systems use a sidebar or navigation config that defines the canonical hierarchy and ordering of pages. If one exists, it is the **single source of truth** for how documentation files should be organized on disk. Check for:
+
+| Config File                  | System          |
+| ---------------------------- | --------------- |
+| `sidebars.js` / `sidebars.ts` | Docusaurus      |
+| `mkdocs.yml` → `nav:` section | MkDocs          |
+| `SUMMARY.md`                 | mdBook          |
+| `_sidebar.md`                | Docsify         |
+| `_toc.yml`                   | Jupyter Book    |
+| `.vitepress/config.*` → `sidebar` | VitePress  |
+| `antora.yml` → `nav:`       | Antora          |
+| `_data/navigation.yml`      | Jekyll          |
+| `book.json` / `book.js`     | GitBook         |
+
+When a sidebar config is found:
+
+1. **Parse its hierarchy** — understand the tree structure (sections, groups, ordering)
+2. **Map it to the file system** — note how sidebar entries map to directories and file paths
+3. **Use it as the default organization rule** — when creating or moving documentation files, place them according to the sidebar hierarchy unless the user explicitly provides different instructions
+4. **Keep sidebar and directories in sync** — if the sidebar groups topics into sections like `Getting Started > Installation`, the corresponding file should live in a directory path that reflects that grouping (e.g., `docs/getting-started/installation.md`)
+
+If no sidebar config is found, fall back to the existing directory structure as the organizational guide.
+
+### Step 5: Discover validation commands
 
 Check for lint/build commands in:
 
@@ -228,7 +253,9 @@ Use this when adding documentation for entirely new features.
 
 ### Step 1: Determine the doc type and location
 
-Examine the existing documentation structure to find the right location:
+**If a sidebar/navigation config was discovered**: Use the sidebar hierarchy as the primary guide for placement. Find the section in the sidebar where the new doc logically belongs, and place the file in the directory path that mirrors that sidebar position. Then update the sidebar config to include the new entry.
+
+**If no sidebar exists**: Examine the existing documentation directory structure to find the right location:
 
 | Doc Type            | Where to Look                            |
 | ------------------- | ---------------------------------------- |
@@ -238,7 +265,7 @@ Examine the existing documentation structure to find the right location:
 | CLI reference       | `cli/`, `commands/`                      |
 | Conceptual / Explanation | `concepts/`, `architecture/`, `explanation/` |
 
-Match the project's existing directory structure rather than inventing new locations.
+In either case, match the project's existing structure rather than inventing new locations.
 
 ### Step 2: Create the file with proper naming
 
@@ -286,15 +313,24 @@ Additional examples for common use cases.
 - Links to related documentation
 ```
 
-### Step 4: Add navigation/sidebar entries if needed
+### Step 4: Update navigation/sidebar config
 
-Many documentation systems require updating a sidebar or navigation config when adding new pages:
+If the project has a sidebar/navigation config (discovered in the project structure step), you **must** update it when adding a new page:
+
+1. **Determine the insertion point** — find the sidebar section that matches the new doc's topic
+2. **Add the entry** — use the same format as existing entries (path, label, ordering)
+3. **Verify directory matches sidebar** — the file's directory path on disk should mirror its position in the sidebar hierarchy
+4. **Preserve ordering** — respect numeric prefixes or explicit ordering if the project uses them
+
+Common sidebar config files:
 
 - `_sidebar.md`, `SUMMARY.md` (Docsify, mdBook)
 - `sidebars.js` (Docusaurus)
 - `mkdocs.yml` nav section (MkDocs)
 - `_toc.yml` (Jupyter Book)
 - `antora.yml` nav (Antora)
+
+If no sidebar config exists, skip this step.
 
 ## Workflow: Record Sync Point
 
