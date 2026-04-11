@@ -7,6 +7,8 @@ description: This skill should be used when the user asks to "update documentati
 
 Guides you through updating project documentation based on code changes on the active branch. Works with any project regardless of language, framework, or documentation format.
 
+> **Important**: For first-time runs or updates spanning a long period, it is strongly recommended to use the most capable model (e.g., Opus) with thinking/extended thinking enabled and effort set to maximum. The first run performs a full-project audit that determines the baseline for all future incremental updates — any documentation gaps missed during this run will **not** be caught by subsequent incremental diffs, since incremental mode only reviews code changes after the recorded sync point. Investing in thoroughness up front pays off in every future run.
+
 ## Quick Start
 
 1. **Pre-flight check**: Verify the working tree is clean and find the last sync point
