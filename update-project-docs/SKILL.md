@@ -195,9 +195,22 @@ Also check whether the doc site itself is complete:
 - Does the sidebar reference files that don't exist?
 - Are there essential infrastructure files missing (e.g., `index.html` for Docsify)?
 
-### Step 4: Present the gap analysis to the user
+### Step 4: Audit directory structure
 
-Before making changes, show the user the categorized list:
+If the project's documentation is already organized into subdirectories, **do not assume the existing structure is correct**. Evaluate it against the current state of the project:
+
+1. **Compare directory groupings to project topology** — do the doc categories still make sense? For example, if the project has grown a new major subsystem (e.g., a CLI was added, or an API layer was split into public/internal), the doc directories should reflect that.
+2. **Check for misplaced files** — are there docs in a directory that no longer matches their topic? (e.g., a "deployment" guide sitting under `api/`)
+3. **Check for overly flat or overly deep nesting** — a single directory with 20+ files may need splitting; a 4-level deep hierarchy with 1 file per level may need flattening.
+4. **Cross-check against sidebar** — if a sidebar/navigation config exists, the file system directories must mirror the sidebar hierarchy. Specifically:
+   - Every section/group in the sidebar should correspond to a directory on disk
+   - Every file referenced in the sidebar should exist at the path the sidebar points to
+   - Files that exist on disk but are not in the sidebar should be either added to the sidebar or flagged as orphaned
+5. **Propose restructuring if needed** — if the directory layout is inconsistent with the sidebar or with the project's actual structure, include specific move/rename operations in the gap analysis. Do not silently leave a mismatched directory structure in place.
+
+### Step 5: Present the gap analysis to the user
+
+Before making changes, show the user the categorized list. Include any directory restructuring proposals:
 
 ```
 First-run audit results:
@@ -216,15 +229,28 @@ Missing infrastructure (3):
   - docs/index.html (Docsify entry point)
   - docs/_coverpage.md
   - Sidebar references docs/guides/advanced.md which does not exist
+
+Directory restructuring (2):
+  - Move docs/deployment.md → docs/guides/deployment.md (matches sidebar section "Guides")
+  - Create docs/cli/ directory (sidebar has "CLI Reference" section but files are in docs root)
 ```
 
 Confirm the plan before making any edits.
 
-### Step 5: Scaffold missing infrastructure
+### Step 6: Scaffold missing infrastructure
 
 If the doc site is incomplete, fill in the missing infrastructure files. See "Workflow: Scaffold Documentation Site Infrastructure" below.
 
-### Step 6: Apply updates
+### Step 7: Restructure directories
+
+If directory restructuring was proposed and the user confirmed:
+
+1. Move/rename files to their new locations
+2. Update all internal cross-references and links in affected docs
+3. Update the sidebar config to reflect the new paths (or verify it already matches, since the restructuring was driven by the sidebar)
+4. Verify no broken links remain
+
+### Step 8: Apply updates
 
 Walk through each missing/outdated doc with user confirmation, following the "Update Existing Documentation" and "Scaffold New Feature Documentation" workflows.
 
@@ -570,13 +596,14 @@ When committing documentation updates, include the sync file in the same commit 
 Before committing documentation changes:
 
 - [ ] Working tree was clean (or user explicitly chose to ignore uncommitted changes)
-- [ ] Diff base was the recorded sync point (or base branch on first run)
+- [ ] Diff base was the recorded sync point (or full audit on first run)
 - [ ] Content accurately reflects the code changes
 - [ ] Frontmatter matches the project's schema
 - [ ] Code examples are correct and runnable
 - [ ] Internal links point to valid paths
 - [ ] Formatting matches existing documentation conventions
 - [ ] Navigation/sidebar updated if a new page was added
+- [ ] **Directory structure matches sidebar hierarchy** — every sidebar section maps to a directory, every sidebar entry points to a file that exists at the expected path, no file is in a directory that contradicts its sidebar position
 - [ ] Project's doc lint/build commands pass (if available)
 - [ ] Sync record updated with the current `HEAD` hash
 - [ ] Changes reviewed with the user before committing
