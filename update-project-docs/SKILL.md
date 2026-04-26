@@ -403,15 +403,17 @@ Replace `Project Name` and the description based on the project's metadata (`pyp
 ```markdown
 - [Home](/)
 - Getting Started
-  - [Installation](getting-started/installation.md)
-  - [Quick Start](getting-started/quick-start.md)
+  - [Installation](/getting-started/installation.md)
+  - [Quick Start](/getting-started/quick-start.md)
 - Guides
-  - [Basic Usage](guides/basic-usage.md)
+  - [Basic Usage](/guides/basic-usage.md)
 - API Reference
-  - [Overview](api/index.md)
+  - [Overview](/api/index.md)
 ```
 
 Populate the sidebar based on the actual topics the project needs documented. The file-system structure under `docs/` should mirror the sidebar hierarchy.
+
+> **Critical**: Every link in `_sidebar.md` **must** use an absolute path starting with `/` (resolved from the docs root), e.g. `/guides/basic-usage.md` — never the relative form `guides/basic-usage.md`. Docsify resolves relative sidebar links against the **current page's URL**, not the docs root, so when a user is already on `/task-configuration/foo.md` and clicks a relative link `task-configuration/bar.md`, the browser requests `/task-configuration/task-configuration/bar.md` and 404s. Absolute paths always resolve from the docs root regardless of which page the user is currently viewing. This rule applies to every sidebar entry, including nested groups and the home link.
 
 **`docs/_coverpage.md`** — landing page:
 
@@ -647,6 +649,7 @@ Before committing documentation changes:
 - [ ] Internal links point to valid paths
 - [ ] Formatting matches existing documentation conventions
 - [ ] Navigation/sidebar updated if a new page was added
+- [ ] **Sidebar links use absolute paths** — every link in `_sidebar.md` (or equivalent) starts with `/` and resolves from the docs root; no relative paths that would cause duplicate-prefix 404s when navigating from a nested page
 - [ ] **Directory structure matches sidebar hierarchy** — every sidebar section maps to a directory, every sidebar entry points to a file that exists at the expected path, no file is in a directory that contradicts its sidebar position
 - [ ] Project's doc lint/build commands pass (if available)
 - [ ] Sync record updated with the current code-sync `HEAD` hash
