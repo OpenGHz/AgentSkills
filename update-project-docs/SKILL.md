@@ -53,29 +53,54 @@ Look for the sync record in this order:
 2. **Frontmatter field** on a docs index page (e.g., `last_synced_commit:` in `docs/index.md`)
 3. **HTML comment** in a docs README (e.g., `<!-- docs-sync: <hash> -->`)
 
-The file format is a single line with the commit hash, optionally with a timestamp:
+The file format records both the **end** and **start** commits of the most recent documentation sync, plus a timestamp:
 
 ```
-abc1234567890def...
-2026-04-11T10:30:00Z
+end_commit: abc1234567890def...
+start_commit: 7890fedcba0987...
+synced_at: 2026-04-11T10:30:00Z
 ```
+
+- **end_commit**: `HEAD` at the moment the documentation sync was committed. This is the primary sync point — the incremental run uses it as the diff base.
+- **start_commit**: The diff base of the run that produced this record (i.e. the commit the docs were synced *from* in the previous round). It exists as a fallback for when `end_commit` is gone — most often after a squash-merge of a feature branch erases the `end_commit` that lived only on that branch, while `start_commit` (which sat on the long-lived base branch) survives. On the very first run there is no prior diff base, so `start_commit` may be omitted or set equal to `end_commit`.
+- **synced_at**: ISO-8601 timestamp of when the sync was recorded (informational; not used for diff resolution).
+
+For backwards compatibility, older sync records may contain only a bare commit hash (and optional timestamp) on its own line — in that case, treat the hash as `end_commit` with no `start_commit`.
 
 **Decide the run mode based on what you find:**
 
 #### Incremental run (sync record exists)
 
-- Verify the recorded commit still exists in history (`git cat-file -e <hash>`)
-- Verify the recorded commit is reachable from `HEAD` (`git merge-base --is-ancestor <hash> HEAD`). The plain existence check passes for any commit in the object database, including ones on unrelated branches or detached from the current branch's ancestry — those would silently produce a wrong diff range. If the commit exists but is not an ancestor of `HEAD`, treat it the same as missing: warn the user and fall back to first-run mode.
-- Find the commit immediately after the recorded hash on the current branch:
-  `git rev-list --ancestry-path --first-parent --reverse <recorded-hash>..HEAD | head -n 1`
-- If that immediate next commit updates the sync record, treat that commit as the effective diff base. This skips the previous documentation-sync commit instead of reprocessing it on every run.
-- If that immediate next commit does **not** update the sync record, use the recorded hash itself as the diff base and include that commit in the review.
-- Use the effective base for review: `git diff <effective-base>...HEAD`
-- If the commit no longer exists (force-pushed, rebased away, or unreachable from `HEAD`), **stop and ask the user how to proceed** via AskUserQuestion. Present these options:
-  1. **Specify a different commit hash** — the user provides a replacement commit (e.g., a known-good earlier sync point, the last release tag, or a commit they remember the docs were accurate at). Re-validate the new hash with both `git cat-file -e` and `git merge-base --is-ancestor`, then continue with the incremental flow using that hash as the recorded sync point. After the run completes, the sync record is updated to the new `HEAD` as usual.
+Resolve a usable diff base by trying candidates in order: `end_commit` first, then `start_commit`, and only if both fail prompt the user.
+
+For each candidate hash, run **both** validation checks:
+
+1. **Existence**: `git cat-file -e <hash>` — the commit object is in the local repo
+2. **Reachability**: `git merge-base --is-ancestor <hash> HEAD` — the commit is on the ancestry of the current branch. The existence check alone passes for any commit in the object database (including ones on unrelated branches or detached from the current branch's ancestry), which would silently produce a wrong diff range, so the reachability check is required.
+
+Resolution flow:
+
+- **If `end_commit` passes both checks**, use it as the diff base. Then refine: find the commit immediately after `end_commit` on the current branch with `git rev-list --ancestry-path --first-parent --reverse <end_commit>..HEAD | head -n 1`.
+  - If that immediate next commit updates the sync record, treat that commit as the effective diff base. This skips the previous documentation-sync commit instead of reprocessing it on every run.
+  - If that immediate next commit does **not** update the sync record, use `end_commit` itself as the diff base and include that commit in the review.
+  - Use the effective base for review: `git diff <effective-base>...HEAD`
+- **If `end_commit` fails but `start_commit` exists in the record and passes both checks**, fall back to `start_commit` as the diff base. **Inform the user this fallback is being used** (so they understand why already-reviewed code may reappear in the diff) — typically this happens after a squash-merge erased `end_commit`, and `start_commit` is the still-reachable ancestor on the base branch.
+
+  Then apply a **squash-merge skip** when it can be proven safe:
+
+  - Find the commit immediately after `start_commit` on the current branch: `git rev-list --ancestry-path --first-parent --reverse <start_commit>..HEAD | head -n 1`.
+  - That commit qualifies as the squash-merge of the previous round if **all** of the following hold:
+    1. It updated the sync record file (`git diff-tree` on that commit shows the sync record path), and
+    2. The `start_commit` field inside the *updated* sync record (read it from that commit's tree, e.g. `git show <next>:<sync-record-path>`) resolves to the same commit as our current `start_commit`.
+  - When both conditions hold, treat that immediate next commit as the effective diff base (skip it). It is the squashed result of the previous doc-sync round, and the assumption is that the pre-merge code review already verified the docs were updated comprehensively for that round, so re-reviewing the squashed code changes here would add no value.
+  - When either condition fails, do **not** skip. Use `start_commit` itself as the diff base and include the immediate next commit in the review — the equality check on the recorded `start_commit` is what distinguishes "this is the squash of the round that started from us" from "this is some unrelated later doc-sync commit that just happens to be next".
+
+  Whether or not the skip applies, the diff range may still redundantly include code already reviewed in the previous round (e.g., commits that landed *after* the squash-merge but were not part of it) — accept that as the price of avoiding a full audit.
+- **If both `end_commit` and `start_commit` are unusable** (missing, unreachable, or the record predates the start/end format and only had a single hash that itself failed), **stop and ask the user how to proceed** via AskUserQuestion. Present these options:
+  1. **Specify a different commit hash** — the user provides a replacement commit (e.g., a known-good earlier sync point, the last release tag, or a commit they remember the docs were accurate at). Re-validate the new hash with both `cat-file -e` and `merge-base --is-ancestor`, then continue with the incremental flow using that hash as the diff base. After the run completes, the sync record is updated to the new `HEAD` as usual.
   2. **Fall back to first-run / full-project audit** — perform a complete audit, then record `HEAD` as the new sync point.
 
-  Falling back to a full audit is significantly more expensive than incremental review, so giving the user a chance to point at a still-reachable earlier commit is often the right escape hatch. If a project's `.docs-sync` is frequently invalidated, surface that to the user (likely caused by force-push / rebase habits or shallow clones) rather than silently re-scanning the entire codebase on every run.
+  Falling back to a full audit is significantly more expensive than incremental review, so giving the user a chance to point at a still-reachable earlier commit is often the right escape hatch. If a project's `.docs-sync` is frequently invalidated all the way through `start_commit`, surface that to the user (likely caused by force-push / rebase habits, repeated history rewrites, or shallow clones) rather than silently re-scanning the entire codebase on every run.
 
 #### First run (no sync record)
 
@@ -296,22 +321,62 @@ Use this workflow when **a sync record exists**. It reviews only the changes sin
 
 ### Step 1: Get the diff
 
-Resolve the effective diff base from the recorded commit hash:
+Resolve the effective diff base from the sync record. Try `end_commit` first, fall back to `start_commit` if `end_commit` is missing or unreachable, and only prompt the user if both fail (see "Incremental run" above for the full fallback contract):
 
 ```bash
-RECORDED=<recorded-hash-from-sync-record>
+END_COMMIT=<end_commit-from-sync-record>
+START_COMMIT=<start_commit-from-sync-record-or-empty>
 SYNC_RECORD_PATH=<path-to-sync-record-file-or-doc-page>
-NEXT=$(git rev-list --ancestry-path --first-parent --reverse "$RECORDED"..HEAD | head -n 1)
-BASE="$RECORDED"
 
-# If the immediate next commit updated the sync record, it is the previous
-# documentation-sync commit and should be skipped on the next run.
-if [ -n "$NEXT" ] && git diff-tree --no-commit-id --name-only -r "$NEXT" -- "$SYNC_RECORD_PATH" | grep -q .
-then
-  BASE="$NEXT"
+# Helper: a commit is usable iff it both exists locally and is an ancestor of HEAD.
+is_usable() {
+  git cat-file -e "$1" 2>/dev/null && git merge-base --is-ancestor "$1" HEAD
+}
+
+if is_usable "$END_COMMIT"; then
+  RECORDED="$END_COMMIT"
+  # If the immediate next commit updated the sync record, it is the previous
+  # documentation-sync commit and should be skipped on the next run.
+  NEXT=$(git rev-list --ancestry-path --first-parent --reverse "$RECORDED"..HEAD | head -n 1)
+  BASE="$RECORDED"
+  if [ -n "$NEXT" ] && git diff-tree --no-commit-id --name-only -r "$NEXT" -- "$SYNC_RECORD_PATH" | grep -q .
+  then
+    BASE="$NEXT"
+  fi
+elif [ -n "$START_COMMIT" ] && is_usable "$START_COMMIT"; then
+  # end_commit is gone (typical after a squash-merge erased the feature
+  # branch). Fall back to start_commit.
+  echo "WARN: end_commit unreachable; falling back to start_commit. Diff may redundantly include code already reviewed in the previous round." >&2
+  BASE="$START_COMMIT"
+
+  # Squash-merge skip: if the immediate next commit after start_commit is
+  # the squash-merge of the previous doc-sync round, we can skip it. The
+  # proof is that the next commit (a) updated the sync record and (b) the
+  # start_commit recorded inside that updated record equals our current
+  # start_commit — i.e., it was produced by a run that started from the
+  # same base we are now falling back to. Pre-merge code review is assumed
+  # to have verified docs completeness for that squashed round.
+  NEXT=$(git rev-list --ancestry-path --first-parent --reverse "$START_COMMIT"..HEAD | head -n 1)
+  if [ -n "$NEXT" ] && git diff-tree --no-commit-id --name-only -r "$NEXT" -- "$SYNC_RECORD_PATH" | grep -q .; then
+    NEXT_RECORDED_START=$(git show "$NEXT:$SYNC_RECORD_PATH" 2>/dev/null \
+      | sed -n 's/^start_commit:[[:space:]]*//p' | head -n 1)
+    if [ -n "$NEXT_RECORDED_START" ]; then
+      START_RESOLVED=$(git rev-parse --verify "$START_COMMIT^{commit}" 2>/dev/null)
+      NEXT_START_RESOLVED=$(git rev-parse --verify "$NEXT_RECORDED_START^{commit}" 2>/dev/null)
+      if [ -n "$START_RESOLVED" ] && [ "$START_RESOLVED" = "$NEXT_START_RESOLVED" ]; then
+        BASE="$NEXT"
+        echo "INFO: skipping $NEXT (squash-merge of previous doc-sync round, same start_commit)." >&2
+      fi
+    fi
+  fi
+else
+  # Both candidates failed — caller must invoke the AskUserQuestion fallback
+  # described in "Incremental run (sync record exists)".
+  echo "ERROR: neither end_commit nor start_commit is reachable; ask the user to specify a commit or fall back to a full audit." >&2
+  exit 1
 fi
 
-# See all changed files since the last sync
+# See all changed files since the chosen base
 git diff $BASE...HEAD --stat
 
 # See detailed changes in source directories
@@ -321,7 +386,7 @@ git diff $BASE...HEAD -- src/ lib/ packages/
 git log --oneline $BASE..HEAD
 ```
 
-Only changes since the effective diff base are reviewed, instead of re-scanning the full codebase every time. In the normal case, this skips the immediately preceding documentation-sync commit without skipping unrelated code commits.
+Only changes since the effective diff base are reviewed, instead of re-scanning the full codebase every time. In the normal case (`end_commit` reachable), this skips the immediately preceding documentation-sync commit without skipping unrelated code commits. In the fallback case (`start_commit`), the same skip can apply if and only if the immediate next commit is provably the squash-merge of the previous round (it updated the sync record AND the new record's `start_commit` equals our `start_commit`); otherwise the diff includes the previous round's code changes too — accept the redundancy as the price of avoiding a full audit.
 
 ### Step 2: Identify documentation-relevant changes
 
@@ -607,36 +672,41 @@ If no sidebar config exists, skip this step.
 
 ## Workflow: Record Sync Point
 
-After all documentation updates are applied and validated, record the current code-sync commit hash so the next run can resolve its incremental diff base correctly.
+After all documentation updates are applied and validated, record both the start and end of this sync round so the next run can resolve its incremental diff base correctly — and so a fallback target survives if `end_commit` is later squashed away.
 
-### Step 1: Get the current code-sync commit hash
+### Step 1: Determine the start and end hashes
 
-```bash
-git rev-parse HEAD
-```
+- **end_commit**: the new `HEAD` after the documentation changes are committed (`git rev-parse HEAD`).
+- **start_commit**: the diff base actually used during this run — i.e. the value of `BASE` resolved in "Analyze Code Changes → Step 1: Get the diff". Concretely:
+  - If this was an incremental run with `end_commit` reachable, `start_commit` is the effective base after the "skip immediate next commit" refinement.
+  - If this was an incremental run that fell back to the previous record's `start_commit`, the new `start_commit` is that fallback value (carry it forward).
+  - If this was a first-run / full-project audit, set `start_commit` equal to `end_commit` (or omit it). On a clean first run there is no earlier point that the docs are partially synced from.
 
 ### Step 2: Write the sync record
 
 Update (or create) the sync tracking file. Prefer the location that already exists; otherwise ask the user where to create it. Default: `.docs-sync` at the repository root.
 
 ```
-<commit-hash>
-<ISO-8601 timestamp>
+end_commit: <new-HEAD-hash>
+start_commit: <diff-base-used-this-run>
+synced_at: <ISO-8601 timestamp>
 ```
 
 Example `.docs-sync` content:
 
 ```
-abc1234567890abcdef1234567890abcdef123456
-2026-04-11T14:22:00Z
+end_commit: abc1234567890abcdef1234567890abcdef123456
+start_commit: 7890fedcba0987654321fedcba0987654321fedc
+synced_at: 2026-04-11T14:22:00Z
 ```
 
 Notes:
 - Commit the sync file alongside the documentation changes — the next run reads it from the committed history
-- If the user chose to ignore uncommitted changes in the pre-flight step, still record `HEAD` (the recorded hash represents what the docs are synced *to*, not what was reviewed)
-- The next run may use the commit immediately after the recorded hash as the effective diff base, but only if that immediate next commit updated the sync record
+- If the user chose to ignore uncommitted changes in the pre-flight step, still record `HEAD` as `end_commit` (the recorded hashes represent what the docs are synced *to* and *from*, not what was reviewed)
+- The next run may use the commit immediately after `end_commit` as the effective diff base, but only if that immediate next commit updated the sync record
+- `start_commit` is the squash-merge safety net: when a feature branch carrying `end_commit` is squash-merged into the base branch, the original `end_commit` disappears, but `start_commit` (which sat on the base branch) is still reachable and serves as the fallback diff base
 - Add `.docs-sync` to `.gitignore`? **No** — the file must be committed so other contributors and future runs can read it
-- If the project already has a sync record in a different location (e.g., frontmatter on a docs index page), update that instead of creating a new file
+- If the project already has a sync record in a different location (e.g., frontmatter on a docs index page), update that instead of creating a new file. When migrating an old single-hash record to the new format, set both `end_commit` and `start_commit` to the existing hash (the old record contained no separate start) and add the timestamp.
 
 ### Step 3: Stage the sync file with the doc changes
 
