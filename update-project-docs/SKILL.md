@@ -65,12 +65,17 @@ abc1234567890def...
 #### Incremental run (sync record exists)
 
 - Verify the recorded commit still exists in history (`git cat-file -e <hash>`)
+- Verify the recorded commit is reachable from `HEAD` (`git merge-base --is-ancestor <hash> HEAD`). The plain existence check passes for any commit in the object database, including ones on unrelated branches or detached from the current branch's ancestry — those would silently produce a wrong diff range. If the commit exists but is not an ancestor of `HEAD`, treat it the same as missing: warn the user and fall back to first-run mode.
 - Find the commit immediately after the recorded hash on the current branch:
   `git rev-list --ancestry-path --first-parent --reverse <recorded-hash>..HEAD | head -n 1`
 - If that immediate next commit updates the sync record, treat that commit as the effective diff base. This skips the previous documentation-sync commit instead of reprocessing it on every run.
 - If that immediate next commit does **not** update the sync record, use the recorded hash itself as the diff base and include that commit in the review.
 - Use the effective base for review: `git diff <effective-base>...HEAD`
-- If the commit no longer exists (force-pushed, rebased away), warn the user and fall back to first-run mode
+- If the commit no longer exists (force-pushed, rebased away, or unreachable from `HEAD`), **stop and ask the user how to proceed** via AskUserQuestion. Present these options:
+  1. **Specify a different commit hash** — the user provides a replacement commit (e.g., a known-good earlier sync point, the last release tag, or a commit they remember the docs were accurate at). Re-validate the new hash with both `git cat-file -e` and `git merge-base --is-ancestor`, then continue with the incremental flow using that hash as the recorded sync point. After the run completes, the sync record is updated to the new `HEAD` as usual.
+  2. **Fall back to first-run / full-project audit** — perform a complete audit, then record `HEAD` as the new sync point.
+
+  Falling back to a full audit is significantly more expensive than incremental review, so giving the user a chance to point at a still-reachable earlier commit is often the right escape hatch. If a project's `.docs-sync` is frequently invalidated, surface that to the user (likely caused by force-push / rebase habits or shallow clones) rather than silently re-scanning the entire codebase on every run.
 
 #### First run (no sync record)
 
