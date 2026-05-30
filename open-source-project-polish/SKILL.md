@@ -44,6 +44,7 @@ Ask only for information that materially affects irreversible or public-facing a
 Create a concise plan covering only allowed documentation and metadata work:
 
 - README improvements using the `create-readme` skill as the basis for structure, tone, and GitHub-flavored Markdown.
+- Bilingual README by default: after the primary (English) README is finalized, produce a Chinese version via the `baoyu-translate` skill, saved as `README.zh-CN.md`, and cross-link the two.
 - Community health files: MIT license by default, contributing guide, code of conduct, security policy, support guide, changelog, citation, governance, issue templates, PR template.
 - Repository hygiene: `.gitignore`, `.gitattributes`, `.editorconfig`, docs index, examples index, badges, project description, topics, funding/sponsor metadata if relevant.
 - Git/GitHub setup: initialize Git if absent, create public remote if absent, set default branch, and push documentation-only changes after safety checks.
@@ -59,6 +60,14 @@ Use the `create-readme` skill for README creation or refresh. Ensure the README 
 - Installation, usage, configuration, examples, project structure, troubleshooting, and links to dedicated files.
 - Do not duplicate full LICENSE, CONTRIBUTING, CHANGELOG, or SECURITY content inside README; link to those files.
 - Preserve existing project-specific knowledge and examples.
+
+After the English `README.md` is finalized, produce a Chinese translation by default:
+
+- The English `README.md` must include a language-switch line near the top by default, e.g. `English | [简体中文](README.zh-CN.md)`. Add it even when the Chinese file is still being generated in the same run — the link points to the path that will exist when the workflow completes.
+- Invoke the `baoyu-translate` skill to translate `README.md` into Chinese, writing the result to `README.zh-CN.md`.
+- The Chinese `README.zh-CN.md` carries the mirror switch line at the top, e.g. `[English](README.md) | 简体中文`.
+- Keep all code blocks, commands, paths, links, badges, and placeholders unchanged; translate only prose.
+- Skip the Chinese version only if the user explicitly opts out. If the project is already authored primarily in Chinese, treat `README.md` as the Chinese version, translate into `README.en.md`, and put the corresponding switch line at the top of each file.
 
 ### 4. Add Community Files
 
@@ -118,6 +127,7 @@ Before finalizing:
 - Search README and public docs for local machine paths before finalizing, including `/home/`, `/Users/`, drive-letter paths, personal workspace names, and absolute paths copied from the current environment.
 - Confirm no source code files were modified unless explicitly approved.
 - Confirm all links to local files target files that exist.
+- If a Chinese README was produced, confirm `README.zh-CN.md` exists, the language-switch links resolve in both files, and code/commands/paths remain identical to the English version.
 - Run lightweight formatting or markdown linting if available; do not install heavy dependencies just for this workflow unless user agrees.
 - Show `git diff --stat` and summarize changed files.
 - If a remote was created, report the URL, visibility, default branch, and whether anything was pushed.
