@@ -1,6 +1,6 @@
 ---
 name: update-project-docs
-description: Use only for explicit maintenance of documentation in a software-project repository. Trigger when the user asks to inspect, audit, assess, update, synchronize, scaffold, or validate repository docs (such as `docs/`, a repository `README`/`CHANGELOG`, or API reference) against a stated code diff or implemented/landed API, configuration, behavior, commit, pull request, or release. Also trigger for an explicitly requested first-time project-doc audit/scaffold or an explicit invocation of `update-project-docs`. Unless explicitly invoked, require both the repository-doc target and code/change or audit context in the current request; never infer them from earlier turns or the mere presence of docs. Do not trigger for “把刚才讨论的内容更新到文档/README”, meeting/conversation summaries, decision records, personal notes, standalone prose, ideas/specs, or generic “document/update this” requests without a code-to-docs comparison.
+description: Maintain software-project documentation against code changes, including audits, synchronization, and validation. Use only when the user explicitly invokes `update-project-docs`.
 ---
 
 # Documentation Updater
