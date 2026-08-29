@@ -1,11 +1,20 @@
 ---
 name: update-project-docs
-description: This skill should be used when the user asks to "update documentation for my changes", "check docs for this PR", "what docs need updating", "sync docs with code", "scaffold docs for this feature", "document this feature", "review docs completeness", "add docs for this change", "what documentation is affected", "docs impact", or mentions documentation updates in any project. Provides a guided workflow for updating project documentation based on code changes.
+description: Use only for explicit maintenance of documentation in a software-project repository. Trigger when the user asks to inspect, audit, assess, update, synchronize, scaffold, or validate repository docs (such as `docs/`, a repository `README`/`CHANGELOG`, or API reference) against a stated code diff or implemented/landed API, configuration, behavior, commit, pull request, or release. Also trigger for an explicitly requested first-time project-doc audit/scaffold or an explicit invocation of `update-project-docs`. Unless explicitly invoked, require both the repository-doc target and code/change or audit context in the current request; never infer them from earlier turns or the mere presence of docs. Do not trigger for “把刚才讨论的内容更新到文档/README”, meeting/conversation summaries, decision records, personal notes, standalone prose, ideas/specs, or generic “document/update this” requests without a code-to-docs comparison.
 ---
 
 # Documentation Updater
 
-Guides you through updating project documentation based on code changes on the active branch. Works with any project regardless of language, framework, or documentation format.
+Guides you through maintaining project documentation against the codebase on the active branch. Works with any project regardless of language, framework, or documentation format.
+
+## Activation boundary
+
+Run this workflow only after the request has both of these anchors:
+
+1. **Repository-doc scope** — the user explicitly wants an action on documentation files belonging to a software project (for example `docs/`, a repository `README`, `CHANGELOG`, or API reference).
+2. **Project-change scope** — the action is tied to a concrete code diff or implemented/landed API, configuration, or behavior change, commit, pull request, or release, or the user explicitly asks for a first-time project-documentation audit or scaffold.
+
+Both anchors must be stated in the current request; do not infer either one from earlier turns, surrounding discussion, or the mere presence of a `docs/` directory. Requests to capture or summarize a discussion, meeting, brainstorm, or other prose do not enter this workflow unless they also provide both anchors above. If either anchor is absent, use the ordinary writing/document workflow. An explicit invocation of `update-project-docs` is sufficient to pass this boundary.
 
 > **Important**: For first-time runs or updates spanning a long period, it is strongly recommended to use the most capable model with thinking/extended thinking enabled and effort set to maximum. The first run performs a full-project audit that determines the baseline for all future incremental updates — any documentation gaps missed during this run will **not** be caught by subsequent incremental diffs, since incremental mode only reviews code changes after the recorded sync point. Investing in thoroughness up front pays off in every future run.
 
